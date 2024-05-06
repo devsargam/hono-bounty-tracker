@@ -1,12 +1,14 @@
-import { createMiddleware } from 'hono/factory';
+import { createFactory } from 'hono/factory';
+import { hexToBytes, isBountyComment } from './utils';
 
 const encoder = new TextEncoder();
 
+const factory = createFactory();
+
 // Check if the request is coming from GitHub webhook
-export const checkGhSignature = createMiddleware(async (c, next) => {
-  const ghWebhookSecret = c.env.GITHUB_WEBHOOK_SECRET;
-  console.log(ghWebhookSecret);
+export const checkGhSignature = factory.createMiddleware(async (c, next) => {
   try {
+    const ghWebhookSecret = c.env.GITHUB_WEBHOOK_SECRET;
     const sigHex = c.req.header()['x-hub-signature-256'].split('=')[1];
     const algorithm = { name: 'HMAC', hash: { name: 'SHA-256' } };
     const keyBytes = encoder.encode(ghWebhookSecret);
@@ -27,32 +29,26 @@ export const checkGhSignature = createMiddleware(async (c, next) => {
       dataBytes
     );
 
-    if (!equal) {
-      return c.json({
-        error: 'Unauthorized',
-      });
-    }
+    if (!equal) return c.set('error', 'unauthorized');
 
-    await next();
+    return await next();
   } catch (e) {
     console.log(e);
-    return c.json({
-      error: 'Unauthorized',
-    });
+    c.set('error', 'unauthorized');
   }
 });
 
-function hexToBytes(hex: string) {
-  let len = hex.length / 2;
-  let bytes = new Uint8Array(len);
+export const webhookHandler = factory.createHandlers(
+  checkGhSignature,
+  async (c) => {
+    if (c.var.error) return c.status(401);
 
-  let index = 0;
-  for (let i = 0; i < hex.length; i += 2) {
-    let c = hex.slice(i, i + 2);
-    let b = parseInt(c, 16);
-    bytes[index] = b;
-    index += 1;
+    const body = await c.req.json();
+    const username = body.sender.login;
+    const message = body.comment.body;
+
+    if (isBountyComment(message)) console.log('yes bounty');
+
+    return c.json({ message: 'Webhook received' });
   }
-
-  return bytes;
-}
+);

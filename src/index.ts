@@ -1,9 +1,12 @@
 import { Hono } from 'hono';
-import { checkGhSignature } from './middleware';
-import { isBountyComment } from './utils';
+import { webhookHandler } from './middleware';
 
 type Bindings = {
   GITHUB_WEBHOOK_SECRET: string;
+  ADMIN_USERNAMES: string;
+  Variables: {
+    error: boolean;
+  };
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -13,16 +16,6 @@ app.get('/', (c) => {
   return c.text('Hello Hono!');
 });
 
-app.post('/webhook', checkGhSignature, async (c) => {
-  const body = await c.req.json();
-  const username = body.sender.login;
-  const message = body.comment.body;
-
-  console.log({ username, message });
-
-  if (isBountyComment(message)) console.log('yes bounty');
-
-  return c.json({ message: 'Webhook received' });
-});
+app.post('/webhook', ...webhookHandler);
 
 export default app;
