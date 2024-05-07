@@ -1,5 +1,5 @@
 import { createFactory } from 'hono/factory';
-import { hexToBytes, isBountyComment } from './utils';
+import { extractAmount, hexToBytes, isBountyComment } from './utils';
 
 const encoder = new TextEncoder();
 
@@ -41,13 +41,24 @@ export const checkGhSignature = factory.createMiddleware(async (c, next) => {
 export const webhookHandler = factory.createHandlers(
   checkGhSignature,
   async (c) => {
+    const adminUsernames: string[] = c.env.ADMIN_USERNAMES.split(',');
     if (c.var.error) return c.status(401);
 
     const body = await c.req.json();
     const username = body.sender.login;
     const message = body.comment.body;
+    const author = body.issue.user.login;
 
-    if (isBountyComment(message)) console.log('yes bounty');
+    if (
+      !isBountyComment(message) ||
+      adminUsernames.find((adminUsername) => adminUsername === username)
+    ) {
+      return c.status(200);
+    }
+
+    // TODO Add the bounty to google sheet
+    const bountyAmount = extractAmount(message);
+    console.log(username, bountyAmount, author);
 
     return c.json({ message: 'Webhook received' });
   }
